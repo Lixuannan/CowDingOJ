@@ -1,0 +1,6 @@
+database:
+  host: localhost
+  port: 27017
+  user: CowDingOJ
+  password: CowDingOJ
+  name: CowDingOJ
