@@ -1,0 +1,5 @@
+pymongo
+PyYAML
+psutil
+fastapi
+schedule

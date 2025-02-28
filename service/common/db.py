@@ -26,6 +26,7 @@ _mongodb_url = (
 
 def get_client(uri: str = _mongodb_url) -> pymongo.MongoClient:
     """
+    Get the MongoDB client connection
     获取 MongoDB 客户端连接
     """
     global _client
@@ -36,6 +37,7 @@ def get_client(uri: str = _mongodb_url) -> pymongo.MongoClient:
 
 def get_database(db_name: str = _config["database"]["name"]) -> Database:
     """
+    Get the specified database, which will be created automatically if it does not exist
     获取指定的数据库，如果不存在会自动创建
     """
     global _db
@@ -46,7 +48,17 @@ def get_database(db_name: str = _config["database"]["name"]) -> Database:
 
 def get_collection(collection_name: str) -> Collection:
     """
+    Get the specified collection
     获取指定的集合（Collection）
     """
     db = get_database()
     return db[collection_name]
+
+
+def get_system_config() -> dict:
+    """
+    Get system configuration
+    获取系统配置
+    """
+    db = get_database()
+    return db["system-config"]

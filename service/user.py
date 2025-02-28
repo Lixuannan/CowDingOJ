@@ -2,22 +2,68 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import psutil
+import schedule
+
+from typing import Union
 
 import common
 
 
 router = APIRouter()
 db = common.db.get_database()
+system_config = common.db.get_system_config()
 
 
 class User(BaseModel):
     username: str
     email: str
-    nickname: str = None
+    bio: Union[str, None] = None
+    nickname: Union[str, None] = None
     password: str
-    phone_number: str = None
-    school_or_company: str = None
-    introduction: str = None
+    phone_number: Union[str, None] = None
+    school_or_company: Union[str, None] = None
+    introduction: Union[str, None] = None
+    permissions: str = system_config.find_one({"name": "default-permissions"})["value"]
+
+
+class UserInfo(BaseModel):
+    username: str
+    email: str
+    bio: Union[str, None] = None
+    nickname: Union[str, None] = None
+    phone_number: Union[str, None] = None
+    school_or_company: Union[str, None] = None
+    introduction: Union[str, None] = None
+
+
+class NewUser(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+def process_user_info(user: dict) -> dict:
+    """
+    Process user information
+    处理用户信息
+    """
+    user_processed = UserInfo(**user)
+    return user_processed.model_dump()
+
+
+def clean_sessions():
+    """
+    Clean expired sessions
+    清理过期的会话
+    """
+    for session in db["sessions"]:
+        if common.get_timestamp() - session["timestamp"] > 2592000:
+            db["sessions"].remove(session)
+
+
+# Schedule the clean_sessions function to run every day at 2 AM
+# 安排每天凌晨 2 点运行清理会话函数
+schedule.every().day.at("02:00").do(clean_sessions)
 
 
 @router.get("/")
@@ -28,50 +74,58 @@ async def read_root():
     """
     cpu_usage = psutil.cpu_percent(interval=1)
     ram_usage = psutil.virtual_memory().percent
-    return {
-        "status": "running",
-        "cpu_usage": cpu_usage,
-        "ram_usage": ram_usage
-    }
+    return {"status": "running", "cpu_usage": cpu_usage, "ram_usage": ram_usage}
+
+
+@router.get("/check_username")
+async def check_username(username: str):
+    """
+    Check if the username exists
+    检查用户名是否存在
+    """
+    if db["users"].find_one({"username": username}) is not None:
+        return {"status": "exists"}
+    return {"status": "not exists"}
 
 
 @router.post("/create_user")
-async def create_user(user: User):
+async def create_user(user: NewUser) -> dict:
     """
     Create a new user
     创建一个新用户
     """
-    # Simulate database insert
-    db["users"].insert_one(user.model_dump())
-    return user
+    if db["users"].find_one({"username": user.username}) is not None:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    user4db = User(**user.model_dump())
+    print(user4db.model_dump())
+    db["users"].insert_one(user4db.model_dump())
+    return process_user_info(user4db.model_dump())
 
 
-@router.get("/users/{username}")
+@router.get("/{username}")
 async def read_user(username: str):
     """
     Get user info by username
     根据用户名获取用户信息
     """
-    user = next((u for u in db["users"] if u["username"] == username), None)
+    user = db["users"].find_one({"username": username})
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    # Protect user passwd
-    user.password = ""
+    user = process_user_info(user)
     return user
 
 
 @router.post("/update_user")
-async def update_user(user: User):
+async def update_user(user: UserInfo):
     """
     Update user info
     更新用户信息
     """
-    for u in db["users"]:
-        if u["username"] == user.username:
-            user.password = u["password"]
-            u.update(user.model_dump())
-            return user
-    return {"status": "failed"}
+    try:
+        db["users"].update_one({"username": user.username}, user.model_dump())
+        return db["users"].find_one({"username": user.username})
+    except Exception:
+        return {"status": "failed"}
 
 
 @router.post("/reset_password")
