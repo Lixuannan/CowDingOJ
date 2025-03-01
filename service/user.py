@@ -1,7 +1,6 @@
 # user.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import psutil
 import schedule
 
 from typing import Union
@@ -64,17 +63,6 @@ def clean_sessions():
 # Schedule the clean_sessions function to run every day at 2 AM
 # 安排每天凌晨 2 点运行清理会话函数
 schedule.every().day.at("02:00").do(clean_sessions)
-
-
-@router.get("/")
-async def read_root():
-    """
-    系统状态
-    System status
-    """
-    cpu_usage = psutil.cpu_percent(interval=1)
-    ram_usage = psutil.virtual_memory().percent
-    return {"status": "running", "cpu_usage": cpu_usage, "ram_usage": ram_usage}
 
 
 @router.get("/check_username")
@@ -161,9 +149,22 @@ async def login(username: str, password: str, cookie: str):
             db["sessions"].insert_one(
                 {
                     "username": username,
-                    "cookie": cookie,
+                    "sid": cookie,
                     "timestamp": common.get_timestamp(),
                 }
             )
-            return {"status": "success", "cookie": cookie}
-    return {"status": "failed", "cookie": None}
+            return {"status": "success", "sid": cookie}
+    return {"status": "failed", "sid": None}
+
+
+@router.post("/logout")
+async def logout(username: str, cookie: str):
+    """
+    User logout
+    用户登出
+    """
+    for s in db["sessions"]:
+        if s["username"] == username and s["sid"] == cookie:
+            db["sessions"].remove(s)
+            return {"status": "success"}
+    return {"status": "failed"}

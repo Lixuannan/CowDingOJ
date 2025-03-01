@@ -24,6 +24,22 @@ _mongodb_url = (
 )
 
 
+def check_permission(sid: str, permission: str) -> bool:
+    """
+    Check if the user has the specified permission
+    检查用户是否具有指定的权限
+    """
+    session = _db["sessions"].find_one({"sid": sid})
+    if not session:
+        return False
+    permissions = (
+        _db["users"]
+        .find_one({"username": session["username"]})["permissions"]
+        .split(",")
+    )
+    return permission in permissions
+
+
 def get_client(uri: str = _mongodb_url) -> pymongo.MongoClient:
     """
     Get the MongoDB client connection

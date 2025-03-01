@@ -1,6 +1,7 @@
 # main.py
 import argparse
 from fastapi import FastAPI
+import psutil
 
 app = FastAPI()
 
@@ -22,6 +23,17 @@ def include_service(service_name: str):
         raise ValueError(
             f"Unknown service name: {service_name}\n未知的服务名称: {service_name}"
         )
+
+
+@app.get("/status")
+async def get_status():
+    """
+    系统状态
+    System status
+    """
+    cpu_usage = psutil.cpu_percent(interval=1)
+    ram_usage = psutil.virtual_memory().percent
+    return {"status": "running", "cpu_usage": cpu_usage, "ram_usage": ram_usage}
 
 
 if __name__ == "__main__":
