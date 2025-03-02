@@ -97,12 +97,17 @@ async def upload_file(
     Args 参数:
     - file: File content 文件内容
     - filename: File name 文件名
-    - filetype: File type (can be Normal or Data) 文件类型【可以是 Normal（普通文件） 或 Data（题目数据）】
+    - filetype: File type (can be Image, Normal or Data) 文件类型【可以是 Image（图片）、Normal（普通文件） 或 Data（题目数据）】
     """
     if not db["sessions"].find_one({"sid": sid}):
         raise HTTPException(status_code=401, detail="Unauthorized")
     if not common.db.check_permission(db, sid=sid, permission="upload-file"):
         raise HTTPException(status_code=403, detail="Permission denied, upload-file")
+    if (
+        not common.db.check_permission(db, sid=sid, permission="edit-problem")
+        and filetype == "Data"
+    ):
+        raise HTTPException(status_code=403, detail="Permission denied, edit-problem")
 
     file_size = 0
     tmp_filename = f"/tmp/{common.get_timestamp()}"
@@ -115,23 +120,15 @@ async def upload_file(
                 raise HTTPException(status_code=413, detail="File too large")
             f.write(chunk)
 
+    username = db["sessions"].find_one({"sid": sid})["username"]
     hash_filename = common.get_file_hash(tmp_filename)
     if db["files"].find_one({"hash_filename": hash_filename}):
         os.remove(tmp_filename)
-        db["files"].insert_one(
-            {
-                "filename": filename,
-                "hash_filename": hash_filename,
-                "size": file_size,
-                "filetype": filetype,
-                "timestamp": common.get_timestamp(),
-            }
-        )
-        return {"status": "success"}
 
-    db["files"].insert_one(
+    result = db["files"].insert_one(
         {
             "filename": filename,
+            "owner": username,
             "hash_filename": hash_filename,
             "size": file_size,
             "filetype": filetype,
@@ -142,31 +139,90 @@ async def upload_file(
         storage.upload(f.read(), hash_filename)
     os.remove(tmp_filename)
 
-    return {"status": "success"}
+    return {"status": "success", "file_id": str(result.inserted_id)}
 
 
 @router.get("/{filename}")
-async def download_file(filename: str, sid: str = Cookie(None)):
+async def download_file(file_id: str, sid: str = Cookie(None)):
     """
     Download a file
     下载文件
     """
-    file_record = db["files"].find_one({"filename": filename})
+    file_record = db["files"].find_one({"_id": file_id})
     if file_record is None:
         raise HTTPException(status_code=404, detail="File not found")
     hash_filename = file_record["hash_filename"]
 
-    user = db["sessions"].find_one({"sid": sid})
-    if user is None and file_record["filetype"] == "Data":
+    if db["sessions"].find_one({"sid": sid}) is None and (
+        file_record["filetype"] != "Image"
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if (
-        not common.db.check_permission(db, user, permission="download-data-file")
+        not common.db.check_permission(db, sid=sid, permission="download-data-file")
         and file_record["filetype"] == "Data"
     ):
-        raise HTTPException(status_code=403, detail="Permission denied, download-data-file")
+        raise HTTPException(
+            status_code=403, detail="Permission denied, download-data-file"
+        )
     presigned_url = storage.generate_presigned_url(hash_filename)
 
     response = RedirectResponse(url=presigned_url)
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename={file_record['filename']}"
+    )
     return response
+
+
+@router.post("/delete")
+async def delete_file(file_id: str, sid: str = Cookie(None)):
+    """
+    Delete a file
+    删除文件
+    """
+    if not db["sessions"].find_one({"sid": sid}):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db["sessions"].find_one({"sid": sid})["username"]
+    file = db["files"].find_one({"_id": file_id})
+
+    if file["owner"] != user and not common.db.check_permission(
+        db, sid=sid, permission="delete-file"
+    ):
+        raise HTTPException(status_code=403, detail="Permission denied, delete-file")
+
+    if db["files"].find({"hash_filename": file["hash_filename"]}).count() == 1:
+        storage.delete(file["hash_filename"])
+
+    db["files"].delete_one({"_id": file_id})
+    return {"status": "success"}
+
+
+@router.get("/list_all")
+async def list_files(sid: str = Cookie(None)):
+    """
+    List all files
+    列出所有文件
+    """
+    if not db["sessions"].find_one({"sid": sid}):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not common.db.check_permission(db, sid=sid, permission="list-all-file"):
+        raise HTTPException(status_code=403, detail="Permission denied, list-all-file")
+
+    files = list(db["files"].find({}))
+    return {"status": "success", "files": files}
+
+
+@router.get("/list_user")
+async def list_files(sid: str = Cookie(None)):
+    """
+    List all files
+    列出所有文件
+    """
+    if not db["sessions"].find_one({"sid": sid}):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db["sessions"].find_one({"sid": sid})["username"]
+    files = list(db["files"].find({"owner": user}))
+
+    return {"status": "success", "files": files}

@@ -34,3 +34,17 @@ async def get_single_config(config_name: str):
     if "_id" in config:
         config["_id"] = str(config["_id"])
     return config
+
+
+@router.post("/update")
+async def update_system_config(config: common.SystemConfig):
+    """
+    Update system configuration
+    更新系统配置
+    """
+    if not common.db.check_permission(db, permission="update-system-config"):
+        raise HTTPException(
+            status_code=403, detail="Permission denied, update-system-config"
+        )
+    system_config.update_one({"name": config.name}, {"$set": {"value": config.value}})
+    return {"status": "success"}

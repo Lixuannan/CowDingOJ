@@ -37,7 +37,7 @@ def check_permission(sid: str, permission: str) -> bool:
         .find_one({"username": session["username"]})["permissions"]
         .split(",")
     )
-    return permission in permissions
+    return permissions == ["root"] or permission in permissions
 
 
 def get_client(uri: str = _mongodb_url) -> pymongo.MongoClient:
