@@ -216,8 +216,8 @@ async def list_files(sid: str = Cookie(None)):
 @router.get("/list_user")
 async def list_files(sid: str = Cookie(None)):
     """
-    List all files
-    列出所有文件
+    List all files of current user
+    列出当前用户的所有文件
     """
     if not db["sessions"].find_one({"sid": sid}):
         raise HTTPException(status_code=401, detail="Unauthorized")

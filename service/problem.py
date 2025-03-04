@@ -2,8 +2,10 @@
 from fastapi import APIRouter, HTTPException, Cookie, Request
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
+from kafka import KafkaProducer
 import asyncio
 
+import json
 from typing import Union, List
 
 import common
@@ -11,6 +13,10 @@ import common
 router = APIRouter()
 db = common.db.get_database()
 system_config = common.db.get_system_config()
+producer = KafkaProducer(
+    bootstrap_servers=[system_config["kafka-broker"]],
+    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+)
 
 
 class Problem(BaseModel):
@@ -155,6 +161,12 @@ async def submit_problem(tid: str, code: str, sid: str = Cookie(None)):
         }
     )
 
+    producer.send(
+        "submission-queue",
+        {"submission_id": result.inserted_id},
+    )
+    producer.flush()
+
     return {"status": "success", "submission_id": result.inserted_id}
 
 
@@ -184,6 +196,12 @@ async def submit_file(tid: str, file_id: str, sid: str = Cookie(None)):
             "timestamp": common.get_timestamp(),
         }
     )
+
+    producer.send(
+        "submission-queue",
+        {"submission_id": result.inserted_id},
+    )
+    producer.flush()
 
     return {"status": "success", "submission_id": result.inserted_id}
 
