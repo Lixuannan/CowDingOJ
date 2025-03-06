@@ -2,6 +2,13 @@
 import argparse
 from fastapi import FastAPI
 import psutil
+import sys
+import os
+import logging
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import common
+
 
 app = FastAPI()
 
@@ -56,4 +63,48 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    LOG_CONFIG = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "colored": {
+                "()": "colorlog.ColoredFormatter",
+                "format": "(uvicorn) %(log_color)s %(levelname)s%(reset)s:        %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+                "log_colors": {
+                    "DEBUG": "cyan",
+                    "INFO": "green",
+                    "WARNING": "yellow",
+                    "ERROR": "red",
+                    "CRITICAL": "bold_red",
+                },
+                "reset": True,
+            },
+            "plain": {
+                "format": "(uvicorn) %(levelname)s:        %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "colored",
+                "level": "DEBUG",
+            },
+            "file": {
+                "class": "logging.FileHandler",
+                "formatter": "plain",
+                "level": "DEBUG",
+                "filename": f"{args.service}.log",
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["console"],
+                "level": "INFO",
+                "propagate": False,
+            }
+        },
+    }
+
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=LOG_CONFIG)

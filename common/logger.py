@@ -1,8 +1,21 @@
 import logging
-import os
+import colorlog
 
 
-def get_logger(name=__name__, log_level=None, log_file=None):
+formatter = colorlog.ColoredFormatter(
+    fmt="(%(name)s) %(log_color)s %(levelname)s%(reset)s:        %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    log_colors={
+        "DEBUG": "cyan",
+        "INFO": "green",
+        "WARNING": "yellow",
+        "ERROR": "red",
+        "CRITICAL": "bold_red",
+    },
+)
+
+
+def get_logger(name=__name__, log_level="INFO", log_file=None):
     """
     Get a unified Logger object.
     获取一个统一格式的 Logger 对象。
@@ -12,7 +25,7 @@ def get_logger(name=__name__, log_level=None, log_file=None):
       - level: 日志级别（例如 "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"），默认为 INFO。
 
     Retern 返回:
-      - A configged logger  
+      - A configged logger
         配置好的 Logger 对象，带有控制台和（可选）文件处理器，日志格式统一。
     """
     # 如果未指定日志级别，则从环境变量中读取，默认 INFO
@@ -22,12 +35,6 @@ def get_logger(name=__name__, log_level=None, log_file=None):
     if not logger.handlers:
         # 设置日志级别
         logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-
-        # 定义统一格式
-        formatter = logging.Formatter(
-            fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
 
         # 添加控制台处理器
         console_handler = logging.StreamHandler()

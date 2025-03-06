@@ -1,4 +1,6 @@
 from . import db
+from . import logger
+from . import model
 
 import hashlib
 import time

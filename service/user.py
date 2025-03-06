@@ -1,44 +1,20 @@
 # user.py
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Cookie
 import schedule
 
-from typing import Union
+from typing import Annotated
+import sys
+import os
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import common
+from common.model import *
 
 
 router = APIRouter()
 db = common.db.get_database()
 system_config = common.db.get_system_config()
-
-
-class User(BaseModel):
-    username: str
-    email: str
-    bio: Union[str, None] = None
-    nickname: Union[str, None] = None
-    password: str
-    phone_number: Union[str, None] = None
-    school_or_company: Union[str, None] = None
-    introduction: Union[str, None] = None
-    permissions: str = system_config.find_one({"name": "default-permissions"})["value"]
-
-
-class UserInfo(BaseModel):
-    username: str
-    email: str
-    bio: Union[str, None] = None
-    nickname: Union[str, None] = None
-    phone_number: Union[str, None] = None
-    school_or_company: Union[str, None] = None
-    introduction: Union[str, None] = None
-
-
-class NewUser(BaseModel):
-    username: str
-    email: str
-    password: str
+logger = common.logger.get_logger(__name__)
 
 
 def process_user_info(user: dict) -> dict:
@@ -65,7 +41,7 @@ def clean_sessions():
 schedule.every().day.at("02:00").do(clean_sessions)
 
 
-@router.get("/check_username")
+@router.post("/check_username")
 async def check_username(username: str):
     """
     Check if the username exists
@@ -85,12 +61,11 @@ async def create_user(user: NewUser) -> dict:
     if db["users"].find_one({"username": user.username}) is not None:
         raise HTTPException(status_code=400, detail="Username already exists")
     user4db = User(**user.model_dump())
-    print(user4db.model_dump())
     db["users"].insert_one(user4db.model_dump())
     return process_user_info(user4db.model_dump())
 
 
-@router.get("/{username}")
+@router.post("/{username}")
 async def read_user(username: str):
     """
     Get user info by username
@@ -110,61 +85,75 @@ async def update_user(user: UserInfo):
     更新用户信息
     """
     try:
-        db["users"].update_one({"username": user.username}, user.model_dump())
-        return db["users"].find_one({"username": user.username})
-    except Exception:
+        db["users"].update_one({"username": user.username}, {"$set": user.model_dump()})
+        return process_user_info(db["users"].find_one({"username": user.username}))
+    except Exception as e:
+        logger.error(f"Failed to update user info, {e}")
         return {"status": "failed"}
 
 
 @router.post("/reset_password")
-async def reset_password(username: str, origin_password: str, new_password: str):
+async def reset_password(info: PasswordResetRequest):
     """
     Reset user password
     重置用户密码
     """
-    for u in db["users"]:
-        if u["username"] == username and u["password"] == origin_password:
-            u["password"] = new_password
-            return u
-    return {"status": "failed"}
+    user = db["users"].find_one({"username": info.username})
+
+    if user and user["password"] == info.origin_password:
+        db["users"].update_one(
+            {"username": info.username}, {"$set": {"password": info.new_password}}
+        )
+        return {"status": "success"}
+    else:
+        return {"status": "failed, wrong password"}
 
 
 @router.post("/delete_user")
-async def delete_user(username: str, password: str):
-    for u in db["users"]:
-        if u["username"] == username and u["password"] == password:
-            db["users"].remove(u)
-            return {"status": "success"}
+async def delete_user(info: LoginRequest):
+    """
+    Delete user
+    删除用户
+    """
+    user = db["users"].find_one({"username": info.username})
+    if user and user["password"] == info.password:
+        db["users"].delete_one({"username": info.username})
+        return {"status": "success"}
     return {"status": "failed"}
 
 
-@router.post("/login")
-async def login(username: str, password: str, cookie: str):
+@router.post("/user_login")
+async def login(info: LoginRequest, cookies: Annotated[Cookies, Cookie()] = None):
     """
     User login
     用户登录
     """
-    for u in db["users"]:
-        if u["username"] == username and u["password"] == password:
-            db["sessions"].insert_one(
-                {
-                    "username": username,
-                    "sid": cookie,
-                    "timestamp": common.get_timestamp(),
-                }
-            )
-            return {"status": "success", "sid": cookie}
+    user = db["users"].find_one({"username": info.username})
+    if user["password"] == info.password:
+        db["sessions"].insert_one(
+            {
+                "username": info.username,
+                "sid": cookies.sid,
+                "timestamp": common.get_timestamp(),
+            }
+        )
+        return {"status": "success", "sid": cookies.sid}
     return {"status": "failed", "sid": None}
 
 
-@router.post("/logout")
-async def logout(username: str, cookie: str):
+@router.post("/user_logout")
+async def logout(cookies: Annotated[Cookies, Cookie()] = None):
     """
     User logout
     用户登出
     """
-    for s in db["sessions"]:
-        if s["username"] == username and s["sid"] == cookie:
-            db["sessions"].remove(s)
-            return {"status": "success"}
+    if not cookies or not cookies.sid:
+        raise HTTPException(
+            status_code=401, content={"detail": "No session ID found in cookies"}
+        )
+
+    session = db["sessions"].find_one({"sid": cookies.sid})
+    if session:
+        db["sessions"].delete_one({"sid": cookies.sid})
+        return {"status": "success", "sid": cookies.sid}
     return {"status": "failed"}

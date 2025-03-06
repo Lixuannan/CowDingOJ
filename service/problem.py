@@ -1,14 +1,17 @@
 # problem.py
 from fastapi import APIRouter, HTTPException, Cookie, Request
 from sse_starlette.sse import EventSourceResponse
-from pydantic import BaseModel
 from kafka import KafkaProducer
 import asyncio
 
 import json
-from typing import Union, List
+from typing import List, Annotated
+import sys
+import os
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import common
+from common.model import *
 
 router = APIRouter()
 db = common.db.get_database()
@@ -19,35 +22,16 @@ producer = KafkaProducer(
 )
 
 
-class Problem(BaseModel):
-    tid: str
-    title: str
-    author: str
-    hiden: bool
-    tags: Union[list, None] = []
-    background: Union[str, None] = None
-    description: str
-    input_description: str
-    output_description: str
-    samples: Union[list, None] = []
-    judge_config: Union[dict, None] = {}
-    hint: str
-    source: str
-    difficulty: int
-
-
 @router.post("/new")
-async def new_problem(problem: Problem, sid: str = Cookie(None)):
+async def new_problem(problem: Problem, cookies: Annotated[Cookies, Cookie()] = None):
     """
     Create a new problem
     创建新的题目
     """
-    if not db["sessions"].find_one({"sid": sid}):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if not common.db.check_permission(db, sid=sid, permission="create-problem"):
+    if not common.db.check_permission(db, sid=cookies.sid, permission="create-problem"):
         raise HTTPException(status_code=403, detail="Permission denied, create-problem")
     if problem.hiden and not common.db.check_permission(
-        db, sid=sid, permission="hide-problem"
+        db, sid=cookies.sid, permission="hide-problem"
     ):
         raise HTTPException(status_code=403, detail="Permission denied, hide-problem")
 
@@ -57,8 +41,8 @@ async def new_problem(problem: Problem, sid: str = Cookie(None)):
     return {"status": "success", "tid": problem.tid}
 
 
-@router.get("/list")
-async def list_problems(sid: str = Cookie(None)):
+@router.post("/list")
+async def list_problems(cookies: Annotated[Cookies, Cookie()] = None):
     """
     List all problems
     列出所有题目
@@ -68,15 +52,15 @@ async def list_problems(sid: str = Cookie(None)):
         if "_id" in problem:
             del problem["_id"]
         if problem["hiden"] and not common.db.check_permission(
-            db, sid=sid, permission="view-hiden-problem"
+            db, sid=cookies.sid, permission="view-hiden-problem"
         ):
             problems.remove(problem)
 
     return problems
 
 
-@router.get("/{tid}")
-async def get_problem(tid: str, sid: str = Cookie(None)):
+@router.post("/{tid}")
+async def get_problem(tid: str, cookies: Annotated[Cookies, Cookie()] = None):
     """
     Get a single problem
     获取单个题目
@@ -85,7 +69,7 @@ async def get_problem(tid: str, sid: str = Cookie(None)):
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
     if problem["hiden"] and not common.db.check_permission(
-        db, sid=sid, permission="view-hiden-problem"
+        db, sid=cookies.sid, permission="view-hiden-problem"
     ):
         raise HTTPException(
             status_code=403, detail="Permission denied, view-hiden-problem"
@@ -96,17 +80,15 @@ async def get_problem(tid: str, sid: str = Cookie(None)):
 
 
 @router.post("/edit")
-async def update_problem(problem: Problem, sid: str = Cookie(None)):
+async def update_problem(problem: Problem, cookies: Annotated[Cookies, Cookie()] = None):
     """
     Update a problem
     更新题目
     """
-    if not db["sessions"].find_one({"sid": sid}):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if not common.db.check_permission(db, sid=sid, permission="edit-problem"):
+    if not common.db.check_permission(db, sid=cookies.sid, permission="edit-problem"):
         raise HTTPException(status_code=403, detail="Permission denied, edit-problem")
     if problem.hiden and not common.db.check_permission(
-        db, sid=sid, permission="hide-problem"
+        db, sid=cookies.sid, permission="hide-problem"
     ):
         raise HTTPException(status_code=403, detail="Permission denied, hide-problem")
 
@@ -118,14 +100,12 @@ async def update_problem(problem: Problem, sid: str = Cookie(None)):
 
 
 @router.post("/delete")
-async def delete_problem(tid: str, sid: str = Cookie(None)):
+async def delete_problem(tid: str, cookies: Annotated[Cookies, Cookie()] = None):
     """
     Delete a problem
     删除题目
     """
-    if not db["sessions"].find_one({"sid": sid}):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if not common.db.check_permission(db, sid=sid, permission="delete-problem"):
+    if not common.db.check_permission(db, sid=cookies.sid, permission="delete-problem"):
         raise HTTPException(status_code=403, detail="Permission denied, delete-problem")
 
     if not db["problems"].find_one({"tid": tid}):
@@ -136,16 +116,14 @@ async def delete_problem(tid: str, sid: str = Cookie(None)):
 
 
 @router.post("/submit_code")
-async def submit_problem(tid: str, code: str, sid: str = Cookie(None)):
+async def submit_problem(tid: str, code: str, cookies: Annotated[Cookies, Cookie()] = None):
     """
     Submit a solution to a problem
     提交题目解答
     """
-    if not db["sessions"].find_one({"sid": sid}):
-        raise HTTPException(status_code=401, detail="Unauthorized")
     if not db["problems"].find_one({"tid": tid}):
         raise HTTPException(status_code=404, detail="Problem not found")
-    if not common.db.check_permission(db, sid=sid, permission="submit-problem"):
+    if not common.db.check_permission(db, sid=cookies.sid, permission="submit-problem"):
         raise HTTPException(status_code=403, detail="Permission denied, submit-problem")
 
     if not code:
@@ -171,16 +149,14 @@ async def submit_problem(tid: str, code: str, sid: str = Cookie(None)):
 
 
 @router.post("submit_file")
-async def submit_file(tid: str, file_id: str, sid: str = Cookie(None)):
+async def submit_file(tid: str, file_id: str, cookies: Annotated[Cookies, Cookie()] = None):
     """
     Submit a file to a problem
     提交文件
     """
-    if not db["sessions"].find_one({"sid": sid}):
-        raise HTTPException(status_code=401, detail="Unauthorized")
     if not db["problems"].find_one({"tid": tid}):
         raise HTTPException(status_code=404, detail="Problem not found")
-    if not common.db.check_permission(db, sid=sid, permission="submit-problem"):
+    if not common.db.check_permission(db, sid=cookies.sid, permission="submit-problem"):
         raise HTTPException(status_code=403, detail="Permission denied, submit-problem")
 
     if not file_id:
@@ -210,14 +186,12 @@ submission_clients: List[asyncio.Queue] = []
 
 
 @router.post("/submission")
-async def get_submission(submission_id: str, request: Request, sid: str = Cookie(None)):
+async def get_submission(submission_id: str, request: Request, cookies: Annotated[Cookies, Cookie()] = None):
     """
     Get a single submission
     获取单个提交
     """
-    if not db["sessions"].find_one({"sid": sid}):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if not common.db.check_permission(db, sid=sid, permission="view-submission"):
+    if not common.db.check_permission(db, sid=cookies.sid, permission="view-submission"):
         raise HTTPException(
             status_code=403, detail="Permission denied, view-submission"
         )
