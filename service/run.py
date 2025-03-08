@@ -1,10 +1,8 @@
 # main.py
 import argparse
 from fastapi import FastAPI
-import psutil
 import sys
 import os
-import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import common
@@ -26,21 +24,27 @@ def include_service(service_name: str):
         from user import router as user_router
 
         app.include_router(user_router)
+    elif service_name == "problem":
+        from problem import router as problem_router
+
+        app.include_router(problem_router)
+    elif service_name == "discussion":
+        from discussion import router as discussion_router
+
+        app.include_router(discussion_router)
+    elif service_name == "config":
+        from config import router as config_router
+
+        app.include_router(config_router)
+    elif service_name == "filemanage":
+        from filemanage import router as filemanage_router
+
+        app.include_router(filemanage_router)
     else:
         raise ValueError(
             f"Unknown service name: {service_name}\n未知的服务名称: {service_name}"
         )
 
-
-@app.get("/status")
-async def get_status():
-    """
-    系统状态
-    System status
-    """
-    cpu_usage = psutil.cpu_percent(interval=1)
-    ram_usage = psutil.virtual_memory().percent
-    return {"status": "running", "cpu_usage": cpu_usage, "ram_usage": ram_usage}
 
 
 if __name__ == "__main__":

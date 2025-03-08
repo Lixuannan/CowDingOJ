@@ -11,8 +11,8 @@ from common.model import *
 
 
 router = APIRouter()
-db = common.db.post_database()
-system_config = common.db.post_system_config()
+db = common.db.get_database()
+system_config = common.db.get_system_config()
 
 
 @router.post("/")
@@ -58,7 +58,7 @@ async def get_single_config(
 
 @router.post("/update")
 async def update_system_config(
-    config: common.SystemConfig, cookies: Annotated[Cookies, Cookie()] = None
+    config, cookies: Annotated[Cookies, Cookie()] = None
 ):
     """
     Update system configuration

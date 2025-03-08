@@ -1,5 +1,11 @@
-pymongo
-PyYAML
-psutil
+uvicorn
 fastapi
+minio
+oss2
+psutil
+pymongo
+kafka-python-ng
+PyYAML
+colorlog
 schedule
+sse_starlette

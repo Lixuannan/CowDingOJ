@@ -205,6 +205,6 @@ async def get_submission(submission_id: str, request: Request, cookies: Annotate
                 break
             yield submission
             await asyncio.sleep(1)
-        return submission
+        return
 
     return EventSourceResponse(submission_client(submission_id, request))
