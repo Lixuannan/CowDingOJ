@@ -90,7 +90,10 @@ storage = (
 
 @router.post("/upload")
 async def upload_file(
-    file: bytes, filename: str, filetype: str, cookies: Annotated[Cookies, Cookie()] = None
+    file: bytes,
+    filename: str,
+    filetype: str,
+    cookies: Annotated[Cookies, Cookie()] = None,
 ):
     """
     Upload a file
@@ -159,7 +162,9 @@ async def download_file(file_id: str, cookies: Annotated[Cookies, Cookie()] = No
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if (
-        not common.db.check_permission(db, sid=cookies.sid, permission="download-data-file")
+        not common.db.check_permission(
+            db, sid=cookies.sid, permission="download-data-file"
+        )
         and file_record["filetype"] == "Data"
     ):
         raise HTTPException(

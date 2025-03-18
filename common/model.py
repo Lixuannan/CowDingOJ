@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
-from typing import Union
+from typing import Union, Literal
+from datetime import datetime
 
 
 class Cookies(BaseModel):
@@ -71,3 +72,35 @@ class Problem(BaseModel):
     hint: str
     source: str
     difficulty: int
+    files: list = []
+
+
+class Contest(BaseModel):
+    title: str
+    author: str
+    description: str
+    problems: list = []
+    begin_time: datetime
+    end_time: datetime
+    rule: Literal["ACM", "OI", "IOI"]
+    contest_members: list = []
+    files: list = []
+
+
+class Submission(BaseModel):
+    problem: str
+    answer: str
+    author: str
+    timestamp: datetime
+    score: int
+    status: Literal[
+        "Pending",
+        "Accepted",
+        "Wrong Answer",
+        "Time Limit Exceeded",
+        "Memory Limit Exceeded",
+        "Compilation Error",
+        "Runtime Error",
+        "Unknown",
+    ]
+    contest_id: str = None

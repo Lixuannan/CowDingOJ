@@ -51,8 +51,12 @@ async def list_problems(cookies: Annotated[Cookies, Cookie()] = None):
     for problem in problems:
         if "_id" in problem:
             del problem["_id"]
-        if problem["hiden"] and not common.db.check_permission(
-            db, sid=cookies.sid, permission="view-hiden-problem"
+        if (
+            problem["hiden"] or db["contest"].find_one({"problems": problem["tid"]})
+        ) and (
+            not common.db.check_permission(
+                db, sid=cookies.sid, permission="view-hiden-problem"
+            )
         ):
             problems.remove(problem)
 
@@ -68,8 +72,10 @@ async def get_problem(tid: str, cookies: Annotated[Cookies, Cookie()] = None):
     problem = db["problems"].find_one({"tid": tid})
     if not problem:
         raise HTTPException(status_code=404, detail="Problem not found")
-    if problem["hiden"] and not common.db.check_permission(
-        db, sid=cookies.sid, permission="view-hiden-problem"
+    if (problem["hiden"] or db["contest"].find_one({"problems": problem["tid"]})) and (
+        not common.db.check_permission(
+            db, sid=cookies.sid, permission="view-hiden-problem"
+        )
     ):
         raise HTTPException(
             status_code=403, detail="Permission denied, view-hiden-problem"
@@ -80,7 +86,9 @@ async def get_problem(tid: str, cookies: Annotated[Cookies, Cookie()] = None):
 
 
 @router.post("/edit")
-async def update_problem(problem: Problem, cookies: Annotated[Cookies, Cookie()] = None):
+async def update_problem(
+    problem: Problem, cookies: Annotated[Cookies, Cookie()] = None
+):
     """
     Update a problem
     更新题目
@@ -115,83 +123,47 @@ async def delete_problem(tid: str, cookies: Annotated[Cookies, Cookie()] = None)
     return {"status": "success"}
 
 
-@router.post("/submit_code")
-async def submit_problem(tid: str, code: str, cookies: Annotated[Cookies, Cookie()] = None):
-    """
-    Submit a solution to a problem
-    提交题目解答
-    """
-    if not db["problems"].find_one({"tid": tid}):
-        raise HTTPException(status_code=404, detail="Problem not found")
-    if not common.db.check_permission(db, sid=cookies.sid, permission="submit-problem"):
+@router.post("/submit")
+async def submit(submission: Submission, cookies: Annotated[Cookies, Cookie()] = None):
+    if (not cookies or not cookies.sid) or (
+        not common.db.check_permission(db, sid=cookies.sid, permission="submit-problem")
+    ):
         raise HTTPException(status_code=403, detail="Permission denied, submit-problem")
 
-    if not code:
-        raise HTTPException(status_code=400, detail="Code cannot be empty")
+    if submission.contest_id:
+        if not db["contest"].find_one({"_id": submission.contest_id}):
+            raise HTTPException(status_code=404, detail="Contest not found")
 
-    result = db["submissions"].insert_one(
-        {
-            "tid": tid,
-            "code": code,
-            "status": "pending",
-            "score": None,
-            "timestamp": common.get_timestamp(),
-        }
-    )
-
-    producer.send(
-        "submission-queue",
-        {"submission_id": result.inserted_id},
-    )
-    producer.flush()
-
-    return {"status": "success", "submission_id": result.inserted_id}
-
-
-@router.post("submit_file")
-async def submit_file(tid: str, file_id: str, cookies: Annotated[Cookies, Cookie()] = None):
-    """
-    Submit a file to a problem
-    提交文件
-    """
-    if not db["problems"].find_one({"tid": tid}):
+    if not db["problems"].find_one({"tid": submission.problem}):
         raise HTTPException(status_code=404, detail="Problem not found")
-    if not common.db.check_permission(db, sid=cookies.sid, permission="submit-problem"):
-        raise HTTPException(status_code=403, detail="Permission denied, submit-problem")
 
-    if not file_id:
-        raise HTTPException(status_code=400, detail="File cannot be empty")
-
-    result = db["submissions"].insert_one(
-        {
-            "tid": tid,
-            "file_id": file_id,
-            "status": "pending",
-            "score": None,
-            "testcases": [],
-            "timestamp": common.get_timestamp(),
-        }
-    )
-
+    submission_id = db["submissions"].insert_one(submission.model_dump()).inserted_id
     producer.send(
-        "submission-queue",
-        {"submission_id": result.inserted_id},
+        "submission",
+        {
+            "submission_id": str(submission_id),
+            "problem": submission.problem,
+            "author": submission.author,
+            "contest_id": submission.contest_id,
+        },
     )
-    producer.flush()
-
-    return {"status": "success", "submission_id": result.inserted_id}
+    return {"status": "success"}
 
 
 submission_clients: List[asyncio.Queue] = []
 
 
 @router.post("/submission")
-async def get_submission(submission_id: str, request: Request, cookies: Annotated[Cookies, Cookie()] = None):
+async def get_submission(
+    submission_id: str, request: Request, cookies: Annotated[Cookies, Cookie()] = None
+):
     """
     Get a single submission
     获取单个提交
     """
-    if not common.db.check_permission(db, sid=cookies.sid, permission="view-submission"):
+    if not common.db.check_permission(
+        db, sid=cookies.sid, permission="view-submission"
+    ):
         raise HTTPException(
             status_code=403, detail="Permission denied, view-submission"
         )
